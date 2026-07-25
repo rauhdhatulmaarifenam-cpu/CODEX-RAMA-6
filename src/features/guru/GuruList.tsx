@@ -11,6 +11,8 @@ import { useAuth } from '../auth/AuthContext';
 import { toast } from 'sonner';
 import { ExportMenu } from '../../components/ExportMenu';
 import { exportToXlsx, exportToMarkdown, exportToPdf } from '../export/exporters';
+import { fetchAllGuru, fetchKelasWaliByGuruIds } from './api';
+import { formatTanggalDenganUsia } from '../../lib/dateUtils';
 import { motion } from 'framer-motion';
 import { useRealtime } from '../../hooks/useRealtime';
 import { Modal } from '../../components/Modal';
@@ -38,22 +40,37 @@ export function GuruList() {
     setDeleteId(null);
   };
 
-  const handleExport = (type: 'xlsx' | 'md' | 'pdf') => {
-    if (!data?.data) return;
-    const cols = [
-      { key: 'nama_lengkap', header: 'Nama' },
-      { key: 'nip',          header: 'NIP' },
-      { key: 'seksi_nama',   header: 'Seksi' },
-      { key: 'status',       header: 'Status' },
-    ];
-    const mapped = data.data.map((g: any) => ({
-      ...g,
-      nip:       g.nip || '-',
-      seksi_nama: g.guru_seksi?.map((gs: any) => gs.seksi?.nama_seksi).filter(Boolean).join(', ') || '-',
-    }));
-    if (type === 'xlsx')     exportToXlsx('guru', 'semua', mapped, cols);
-    else if (type === 'md')  exportToMarkdown('guru', 'semua', mapped, cols);
-    else                     exportToPdf('guru', 'semua', mapped, cols);
+  const handleExport = async (type: 'xlsx' | 'md' | 'pdf') => {
+    const tid = toast.loading('Memuat seluruh data guru...');
+    try {
+      const allData = await fetchAllGuru({
+        search:   search   || undefined,
+        seksiId:  seksiFilter || undefined,
+      });
+      const kelasWaliMap = await fetchKelasWaliByGuruIds(allData.map((g: any) => g.id));
+      toast.dismiss(tid);
+      const cols = [
+        { key: 'nama_lengkap',       header: 'Nama' },
+        { key: 'nip',                header: 'NIP' },
+        { key: 'tanggal_lahir_usia', header: 'Tgl Lahir (Usia)' },
+        { key: 'seksi_nama',         header: 'Seksi' },
+        { key: 'kelas_wali_nama',    header: 'Wali Kelas di' },
+        { key: 'status',             header: 'Status' },
+      ];
+      const mapped = allData.map((g: any) => ({
+        ...g,
+        nip:                g.nip || '-',
+        tanggal_lahir_usia: formatTanggalDenganUsia(g.tanggal_lahir),
+        seksi_nama:         g.guru_seksi?.map((gs: any) => gs.seksi?.nama_seksi).filter(Boolean).join('; ') || '-',
+        kelas_wali_nama:    kelasWaliMap[g.id]?.join('; ') || '-',
+      }));
+      if (type === 'xlsx')    exportToXlsx('guru', 'semua', mapped, cols);
+      else if (type === 'md') exportToMarkdown('guru', 'semua', mapped, cols);
+      else                    exportToPdf('guru', 'semua', mapped, cols);
+    } catch (e: any) {
+      toast.dismiss(tid);
+      toast.error('Gagal memuat data ekspor: ' + (e?.message || 'Error tidak diketahui'));
+    }
   };
 
   return (
@@ -88,6 +105,7 @@ export function GuruList() {
           <TableHeader>
             <TableHead>Nama</TableHead>
             <TableHead>NIP</TableHead>
+            <TableHead>Tgl Lahir (Usia)</TableHead>
             <TableHead>Seksi</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Aksi</TableHead>
@@ -106,6 +124,9 @@ export function GuruList() {
                   {g._pendingSync && <Clock className="w-3 h-3 inline ml-1 text-amber-600" />}
                 </TableCell>
                 <TableCell className="tabular-nums">{g.nip || '-'}</TableCell>
+                <TableCell className="tabular-nums text-text-secondary text-xs whitespace-nowrap">
+                  {formatTanggalDenganUsia((g as any).tanggal_lahir)}
+                </TableCell>
                 <TableCell>
                   {g.guru_seksi?.map((gs: any) => gs.seksi?.nama_seksi).filter(Boolean).join(', ') || '-'}
                 </TableCell>

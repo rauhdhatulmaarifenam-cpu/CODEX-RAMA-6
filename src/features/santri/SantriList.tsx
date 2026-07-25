@@ -12,6 +12,8 @@ import { deleteSantri } from './api';
 import { toast } from 'sonner';
 import { ExportMenu } from '../../components/ExportMenu';
 import { exportToXlsx, exportToMarkdown, exportToPdf } from '../export/exporters';
+import { fetchAllSantri } from './api';
+import { formatTanggalDenganUsia } from '../../lib/dateUtils';
 import { motion } from 'framer-motion';
 import { useRealtime } from '../../hooks/useRealtime';
 import { Modal } from '../../components/Modal';
@@ -57,24 +59,37 @@ export function SantriList() {
     setDeleteId(null);
   };
 
-  const handleExport = (type: 'xlsx' | 'md' | 'pdf') => {
-    if (!data?.data) return;
-    const cols = [
-      { key: 'nis',          header: 'NIS' },
-      { key: 'nama_lengkap', header: 'Nama Lengkap' },
-      { key: 'jenis_kelamin', header: 'JK' },
-      { key: 'status',       header: 'Status' },
-      { key: 'kelas',        header: 'Kelas' },
-    ];
-    const mapped = data.data.map(r => ({
-      ...r,
-      nis:   r.nis || '-',
-      kelas: (r as any).kelas?.nama_kelas || '-',
-    }));
-    const konteks = `kelas-${kelasFilter || 'semua'}_status-${statusFilter || 'semua'}`;
-    if (type === 'xlsx')    exportToXlsx('santri', konteks, mapped, cols);
-    else if (type === 'md') exportToMarkdown('santri', konteks, mapped, cols);
-    else                    exportToPdf('santri', konteks, mapped, cols);
+  const handleExport = async (type: 'xlsx' | 'md' | 'pdf') => {
+    const tid = toast.loading('Memuat seluruh data santri...');
+    try {
+      const allData = await fetchAllSantri({
+        search: debouncedSearch,
+        kelasId: kelasFilter || undefined,
+        status:  statusFilter  || undefined,
+      });
+      toast.dismiss(tid);
+      const cols = [
+        { key: 'nis',           header: 'NIS' },
+        { key: 'nama_lengkap',  header: 'Nama Lengkap' },
+        { key: 'jenis_kelamin', header: 'JK' },
+        { key: 'tanggal_lahir_usia', header: 'Tgl Lahir (Usia)' },
+        { key: 'status',        header: 'Status' },
+        { key: 'kelas',         header: 'Kelas' },
+      ];
+      const mapped = allData.map(r => ({
+        ...r,
+        nis:   r.nis || '-',
+        kelas: (r as any).kelas?.nama_kelas || '-',
+        tanggal_lahir_usia: formatTanggalDenganUsia(r.tanggal_lahir),
+      }));
+      const konteks = `kelas-${kelasFilter || 'semua'}_status-${statusFilter || 'semua'}`;
+      if (type === 'xlsx')    exportToXlsx('santri', konteks, mapped, cols);
+      else if (type === 'md') exportToMarkdown('santri', konteks, mapped, cols);
+      else                    exportToPdf('santri', konteks, mapped, cols);
+    } catch (e: any) {
+      toast.dismiss(tid);
+      toast.error('Gagal memuat data ekspor: ' + (e?.message || 'Error tidak diketahui'));
+    }
   };
 
   return (
@@ -123,6 +138,7 @@ export function SantriList() {
               <TableHead>NIS</TableHead>
               <TableHead>Nama</TableHead>
               <TableHead>JK</TableHead>
+              <TableHead>Tgl Lahir (Usia)</TableHead>
               <TableHead>Kelas</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Aksi</TableHead>
@@ -142,6 +158,9 @@ export function SantriList() {
                   </TableCell>
                   <TableCell>{s.nama_lengkap}</TableCell>
                   <TableCell>{s.jenis_kelamin || '-'}</TableCell>
+                  <TableCell className="tabular-nums text-text-secondary text-xs whitespace-nowrap">
+                    {formatTanggalDenganUsia((s as any).tanggal_lahir)}
+                  </TableCell>
                   <TableCell>{(s as any).kelas?.nama_kelas || '-'}</TableCell>
                   <TableCell>
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${s.status === 'aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-border text-text-secondary'}`}>

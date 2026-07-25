@@ -10,6 +10,7 @@ import { useAuth } from '../auth/AuthContext';
 import { toast } from 'sonner';
 import { ExportMenu } from '../../components/ExportMenu';
 import { exportToXlsx, exportToMarkdown, exportToPdf } from '../export/exporters';
+import { fetchAllSeksiWithGuru } from './api';
 import { motion } from 'framer-motion';
 import { useRealtime } from '../../hooks/useRealtime';
 import { Modal } from '../../components/Modal';
@@ -20,7 +21,7 @@ export function SeksiList(){
   const {canDelete}=useAuth(); const navigate=useNavigate(); const qc=useQueryClient();
   useRealtime('seksi',[['seksi']]); const {data,isLoading}=useSeksiList({search});
   const handleDelete=async()=>{ if(!deleteId) return; const {error,queued}=await deleteSeksi(deleteId); if(error) toast.error(error.message); else {toast.success(queued?'Dihapus offline':'Dihapus'); qc.invalidateQueries({queryKey:['seksi']});} setDeleteId(null); };
-  const handleExport=(type:'xlsx'|'md'|'pdf')=>{ if(!data?.data) return; const cols=[{key:'nama_seksi',header:'Nama Seksi'},{key:'deskripsi',header:'Deskripsi'},{key:'pembina',header:'Pembina'}]; const mapped=data.data.map((r:any)=>({...r, pembina:r.pembina?.nama_lengkap||r.pembina?.nickname||'-', deskripsi:r.deskripsi||'-'})); if(type==='xlsx') exportToXlsx('seksi','semua',mapped,cols); else if(type==='md') exportToMarkdown('seksi','semua',mapped,cols); else exportToPdf('seksi','semua',mapped,cols); };
+  const handleExport=async(type:'xlsx'|'md'|'pdf')=>{ const tid=toast.loading('Memuat seluruh data seksi...'); try { const allData=await fetchAllSeksiWithGuru({search}); toast.dismiss(tid); const cols=[{key:'nama_seksi',header:'Nama Seksi'},{key:'deskripsi',header:'Deskripsi'},{key:'pembina',header:'Pembina'},{key:'anggota_guru',header:'Guru Anggota'}]; const mapped=allData.map((r:any)=>({...r, pembina:r.pembina?.nama_lengkap||r.pembina?.nickname||'-', deskripsi:r.deskripsi||'-', anggota_guru:r._guru_anggota?.join('; ')||'-'})); if(type==='xlsx') exportToXlsx('seksi','semua',mapped,cols); else if(type==='md') exportToMarkdown('seksi','semua',mapped,cols); else exportToPdf('seksi','semua',mapped,cols); } catch(e:any) { toast.dismiss(tid); toast.error('Gagal memuat data ekspor: '+(e?.message||'Error tidak diketahui')); } };
   return (
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h1 className="font-heading text-2xl font-bold">Seksi</h1><p className="text-sm text-text-secondary">{data?.count||0} seksi</p></div><div className="flex gap-2"><ExportMenu onExport={handleExport as any}/><Button variant="secondary" onClick={()=>navigate('/seksi/laporan')} leftIcon={<BarChart2 className="w-4 h-4"/>}>Lihat Laporan</Button><Button onClick={()=>navigate('/seksi/baru')} leftIcon={<Plus className="w-4 h-4"/>}>Tambah Seksi</Button></div></div>

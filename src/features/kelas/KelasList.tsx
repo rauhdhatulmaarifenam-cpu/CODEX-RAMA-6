@@ -10,6 +10,7 @@ import { useAuth } from '../auth/AuthContext';
 import { toast } from 'sonner';
 import { ExportMenu } from '../../components/ExportMenu';
 import { exportToXlsx, exportToMarkdown, exportToPdf } from '../export/exporters';
+import { fetchAllKelas, fetchSantriGroupedByKelasId } from './api';
 import { motion } from 'framer-motion';
 import { useRealtime } from '../../hooks/useRealtime';
 import { Modal } from '../../components/Modal';
@@ -65,27 +66,39 @@ export function KelasList() {
     setDeleteId(null);
   };
 
-  const handleExport = (type: 'xlsx' | 'md' | 'pdf') => {
-    if (!data?.data) return;
-    const cols = [
-      { key: 'nama_kelas',   header: 'Nama Kelas' },
-      { key: 'kategori',     header: 'Kategori' },
-      { key: 'tingkat',      header: 'Tingkat' },
-      { key: 'tahun_ajaran', header: 'Tahun Ajaran' },
-      { key: 'wali_nama',    header: 'Wali Kelas' },
-      { key: 'kapasitas',    header: 'Kapasitas' },
-    ];
-    const mapped = data.data.map((k: any) => ({
-      ...k,
-      kategori:     k.kategori     || '-',
-      tingkat:      k.tingkat      || '-',
-      tahun_ajaran: k.tahun_ajaran || '-',
-      kapasitas:    k.kapasitas    || '-',
-      wali_nama:    k.kelas_wali?.map((kw: any) => kw.guru?.nama_lengkap).filter(Boolean).join(', ') || '-',
-    }));
-    if (type === 'xlsx')    exportToXlsx('kelas', 'semua', mapped, cols);
-    else if (type === 'md') exportToMarkdown('kelas', 'semua', mapped, cols);
-    else                    exportToPdf('kelas', 'semua', mapped, cols);
+  const handleExport = async (type: 'xlsx' | 'md' | 'pdf') => {
+    const tid = toast.loading('Memuat seluruh data kelas...');
+    try {
+      const [allData, santriGrouped] = await Promise.all([
+        fetchAllKelas({ search }),
+        fetchSantriGroupedByKelasId(),
+      ]);
+      toast.dismiss(tid);
+      const cols = [
+        { key: 'nama_kelas',     header: 'Nama Kelas' },
+        { key: 'kategori',       header: 'Kategori' },
+        { key: 'tingkat',        header: 'Tingkat' },
+        { key: 'tahun_ajaran',   header: 'Tahun Ajaran' },
+        { key: 'wali_nama',      header: 'Wali Kelas' },
+        { key: 'kapasitas',      header: 'Kapasitas' },
+        { key: 'santri_anggota', header: 'Daftar Santri Anggota' },
+      ];
+      const mapped = allData.map((k: any) => ({
+        ...k,
+        kategori:       k.kategori     || '-',
+        tingkat:        k.tingkat      || '-',
+        tahun_ajaran:   k.tahun_ajaran || '-',
+        kapasitas:      k.kapasitas    || '-',
+        wali_nama:      k.kelas_wali?.map((kw: any) => kw.guru?.nama_lengkap).filter(Boolean).join('; ') || '-',
+        santri_anggota: santriGrouped[k.id]?.join('; ') || '-',
+      }));
+      if (type === 'xlsx')    exportToXlsx('kelas', 'semua', mapped, cols);
+      else if (type === 'md') exportToMarkdown('kelas', 'semua', mapped, cols);
+      else                    exportToPdf('kelas', 'semua', mapped, cols);
+    } catch (e: any) {
+      toast.dismiss(tid);
+      toast.error('Gagal memuat data ekspor: ' + (e?.message || 'Error tidak diketahui'));
+    }
   };
 
   return (

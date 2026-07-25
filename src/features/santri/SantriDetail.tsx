@@ -8,6 +8,7 @@ import { exportSingleToDocx, exportSingleToPdf } from '../export/exporters';
 import { ArrowLeft, Pencil } from 'lucide-react';
 import { SantriForm } from './SantriForm';
 import { FotoAvatar } from '../../components/FotoAvatar';
+import { formatTanggalDenganUsia } from '../../lib/dateUtils';
 
 export function SantriDetail() {
   const { id } = useParams();
@@ -25,7 +26,7 @@ export function SantriDetail() {
     { label: 'NIS',              value: data.nis || '-' },
     { label: 'Nama Lengkap',     value: data.nama_lengkap },
     { label: 'Jenis Kelamin',    value: data.jenis_kelamin === 'L' ? 'Laki-laki' : data.jenis_kelamin === 'P' ? 'Perempuan' : '-' },
-    { label: 'Tempat, Tgl Lahir', value: `${data.tempat_lahir || '-'}${data.tanggal_lahir ? ', ' + data.tanggal_lahir : ''}` },
+    { label: 'Tempat, Tgl Lahir', value: `${data.tempat_lahir || '-'}${data.tanggal_lahir ? ', ' + formatTanggalDenganUsia(data.tanggal_lahir) : ''}` },
     { label: 'Alamat',           value: data.alamat },
     { label: 'Kelas',            value: (data as any).kelas?.nama_kelas || '-' },
     { label: 'Status',           value: data.status },

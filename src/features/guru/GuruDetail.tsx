@@ -8,6 +8,7 @@ import { exportSingleToDocx, exportSingleToPdf } from '../export/exporters';
 import { ArrowLeft, Pencil } from 'lucide-react';
 import { GuruForm } from './GuruForm';
 import { FotoAvatar } from '../../components/FotoAvatar';
+import { formatTanggalDenganUsia } from '../../lib/dateUtils';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabaseClient';
 import { useRealtime } from '../../hooks/useRealtime';
@@ -52,10 +53,13 @@ export function GuruDetail() {
     { label: 'Jenis Kelamin', value: data.jenis_kelamin === 'L' ? 'Laki-laki' : data.jenis_kelamin === 'P' ? 'Perempuan' : '-' },
     { label: 'Status',        value: data.status },
     { label: 'Tempat Lahir',  value: data.tempat_lahir },
-    { label: 'Tanggal Lahir', value: data.tanggal_lahir },
+    { label: 'Tanggal Lahir', value: formatTanggalDenganUsia(data.tanggal_lahir) },
     { label: 'Alamat',        value: data.alamat },
     { label: 'No Telepon',    value: data.no_telepon },
     { label: 'Seksi',         value: seksiNama },
+    { label: 'Wali Kelas di', value: waliKelas && waliKelas.length > 0
+        ? waliKelas.map((wk: any) => wk.kelas?.nama_kelas).filter(Boolean).join('; ')
+        : '-' },
   ];
 
   const handleExport = async (type: 'docx' | 'pdf') => {

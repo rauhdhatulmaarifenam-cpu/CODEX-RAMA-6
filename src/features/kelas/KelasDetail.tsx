@@ -56,14 +56,18 @@ export function KelasDetail() {
   ];
 
   // Fields untuk ekspor teks (docx/pdf) — tanpa badge, cukup teks
+  const daftarSantriTeks = santriInKelas && santriInKelas.length > 0
+    ? santriInKelas.map(s => `${s.nis || '-'} – ${s.nama_lengkap}`).join('; ')
+    : 'Tidak ada santri';
   const exportFields = [
-    { label: 'Nama Kelas',    value: data.nama_kelas },
-    { label: 'Kategori',      value: data.kategori    || '-' },
-    { label: 'Tingkat',       value: data.tingkat     || '-' },
-    { label: 'Tahun Ajaran',  value: data.tahun_ajaran || '-' },
-    { label: 'Wali Kelas',    value: waliNama },
-    { label: 'Kapasitas',     value: data.kapasitas   ?? '-' },
-    { label: 'Jumlah Santri', value: santriInKelas?.length ?? 0 },
+    { label: 'Nama Kelas',       value: data.nama_kelas },
+    { label: 'Kategori',         value: data.kategori    || '-' },
+    { label: 'Tingkat',          value: data.tingkat     || '-' },
+    { label: 'Tahun Ajaran',     value: data.tahun_ajaran || '-' },
+    { label: 'Wali Kelas',       value: waliNama },
+    { label: 'Kapasitas',        value: data.kapasitas   ?? '-' },
+    { label: 'Jumlah Santri',    value: santriInKelas?.length ?? 0 },
+    { label: 'Daftar Santri',    value: daftarSantriTeks },
   ];
 
   const handleExport = async (type: 'docx' | 'pdf') => {
