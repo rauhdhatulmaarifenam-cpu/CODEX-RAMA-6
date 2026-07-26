@@ -1,92 +1,54 @@
-# Codex — RAMA 6
+# Codex — RAMA 6 — Raudhatul Ma'arif 6
 
-PWA manajemen internal untuk Pondok Pesantren Raudhatul Ma'arif 6. Dipakai guru-guru untuk mengelola data santri, kelas, guru, dan seksi secara kolaboratif realtime, dengan 3 tingkat kewenangan, offline-first.
+PWA internal untuk pondok pesantren Raudhatul Ma'arif 6. Dipakai guru-guru untuk mengelola data santri, kelas, guru, seksi secara kolaboratif realtime dengan 3 tingkat kewenangan, offline-first.
 
-## Tech Stack
+## Stack
 
-- **Frontend**: React 18 + Vite + TypeScript
-- **Styling**: Tailwind CSS + Framer Motion
-- **Routing**: React Router v6
-- **Data Fetching**: TanStack Query v5
-- **Forms**: React Hook Form + Zod
-- **Backend**: Supabase (Postgres + Auth + Realtime)
-- **PWA**: vite-plugin-pwa (autoUpdate, service worker)
-- **Offline**: idb-keyval (offline queue, FIFO per record)
-- **Export**: SheetJS xlsx, docx, jspdf + jspdf-autotable
+- React 18 + Vite + TypeScript
+- Tailwind CSS + Framer Motion
+- React Router v6, TanStack Query v5
+- React Hook Form + Zod
+- Supabase (Postgres + Auth + Realtime)
+- PWA: vite-plugin-pwa (autoUpdate)
+- Offline queue: idb-keyval
+- Export: SheetJS xlsx, docx, jspdf
 
 ## How to Run
 
 ```bash
-npm run dev   # dev server on port 5000
-npm run build # production build to dist/
+npm run dev
 ```
 
-The workflow "Start application" runs `npm run dev` automatically.
+Runs on port **5000**. The `Start application` workflow handles this automatically.
 
-## Required Environment Secrets
+## Required Secrets
 
-Set these in Replit Secrets (not `.env` file):
+Set in Replit Secrets:
 
-| Secret | Description |
-|---|---|
-| `VITE_SUPABASE_URL` | Supabase Project URL (https://xxx.supabase.co) |
-| `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key |
+| Key | Description |
+|-----|-------------|
+| `VITE_SUPABASE_URL` | Supabase project URL (e.g. `https://xxxx.supabase.co`) |
+| `VITE_SUPABASE_ANON_KEY` | Supabase public anon key |
 
-Add them via the Secrets panel (lock icon in sidebar), then restart the "Start application" workflow.
+## Auth
 
-## First-Time Setup (Supabase)
+Login uses **nickname + seed** (no email/OAuth). The first super admin must be bootstrapped via SQL in the Supabase dashboard. See README.md for the full Supabase schema and RLS setup.
 
-1. Buka Supabase Dashboard → SQL Editor, jalankan isi `supabase-schema.sql`
-2. Matikan **Confirm email**: Authentication → Providers → Email → Confirm email: OFF
-3. Bootstrap super admin pertama:
-   ```sql
-   UPDATE profiles SET role='super_admin' WHERE lower(nickname)='adminpertama';
-   ```
-
-## Auth Flow
-
-Login pakai nickname + password (seed). Email sintetis dibuat otomatis di `src/lib/nicknameToEmail.ts`.
-
-## Key Source Directories
+## Project Structure
 
 ```
 src/
-  features/
-    santri/     – CRUD santri + paginasi + ekspor lengkap
-    guru/       – CRUD guru + seksi junction + ekspor lengkap
-    kelas/      – CRUD kelas + wali kelas + ekspor dengan daftar santri
-    seksi/      – CRUD seksi + guru anggota + ekspor dengan daftar guru
-    export/     – exporters.ts: xlsx, markdown, pdf list & single record
-    auth/       – AuthContext, login, signup
-    dashboard/  – halaman utama + statistik
-  lib/
-    dateUtils.ts    – hitungUsia(), formatTanggalDenganUsia() — dipakai di semua list & detail
-    supabaseClient  – inisialisasi Supabase
-    offlineQueue    – mutateWithQueue + FIFO replay
-    storage         – upload/signed URL foto profil
-  components/     – Button, Card, Table, Modal, ExportMenu, dll
+  components/   Shared UI components
+  features/     Feature modules (santri, kelas, guru, seksi, anggota, auth, dashboard, export, agent, aktivitas)
+  hooks/        Custom hooks (useRealtime)
+  lib/          Utilities (supabaseClient, offlineQueue, storage, etc.)
+  types/        TypeScript types
 ```
 
-## Pagination (Santri)
+## Deploy
 
-Query paginasi Santri menggunakan urutan berlapis:
-```ts
-.order('nama_lengkap').order('id')
-```
-`id` sebagai penentu urutan kedua memastikan Postgres menghasilkan urutan deterministik antar halaman. Setiap baris tabel menggunakan `key={s.id}` (bukan index array).
-
-## Export
-
-Semua ekspor daftar (xlsx/pdf/md) mengambil **seluruh data** dari Supabase terlepas dari paginasi:
-- Santri: `fetchAllSantri()` dengan filter aktif
-- Guru: `fetchAllGuru()` + `fetchKelasWaliByGuruIds()` untuk data wali kelas lengkap
-- Kelas: `fetchAllKelas()` + `fetchSantriGroupedByKelasId()` untuk daftar santri per kelas
-- Seksi: `fetchAllSeksiWithGuru()` untuk daftar guru anggota per seksi
-
-Ekspor detail per record (docx/pdf) menyertakan data relasi lengkap (santri di kelas, guru di seksi, wali kelas untuk guru).
+Originally configured for Netlify (`netlify.toml`, `public/_redirects`). Build command: `npm run build`, publish dir: `dist`. Set the same two env vars in the target platform.
 
 ## User Preferences
 
-- Komentar dan pesan UI dalam Bahasa Indonesia
-- Pertahankan struktur direktori per-fitur (features/xxx/)
-- Jangan ubah field tanggal lahir menjadi field usia — hitung usia secara otomatis di sisi tampilan
+- Keep existing project structure and stack — do not restructure or migrate.
