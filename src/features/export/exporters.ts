@@ -142,7 +142,13 @@ function listFileName(modul: string, filterLabel: string, ext: string) {
   return fileName(filterLabel ? `${base} ${filterLabel}` : base, ext);
 }
 
-function drawPdfBrand(doc: jsPDF) {
+/**
+ * Gambar brand strip + nama app + nama pesantren.
+ * Mengembalikan posisi Y tepat di bawah elemen terakhir yang digambar
+ * (baseline PESANTREN_NAME ~18 mm + ruang descender + jarak aman = 24 mm)
+ * sehingga pemanggil selalu tahu titik mulai konten yang aman.
+ */
+function drawPdfBrand(doc: jsPDF): number {
   doc.setFillColor(...ACCENT);
   doc.rect(0, 0, doc.internal.pageSize.getWidth(), 2, 'F');
 
@@ -155,17 +161,23 @@ function drawPdfBrand(doc: jsPDF) {
   doc.setFontSize(9);
   doc.setTextColor(100, 100, 100);
   doc.text(PESANTREN_NAME, 14, 18);
+
+  // Elemen terakhir: PESANTREN_NAME baseline di y=18 mm (fontSize 9 pt ≈ 3.2 mm tinggi).
+  // Kembalikan 24 mm sebagai batas bawah aman setelah semua elemen kop.
+  return 24;
 }
 
 /** Tulis header dokumen PDF dengan warna brand, kembalikan startY untuk tabel */
 function drawPdfHeader(doc: jsPDF, title: string, subtitle: string): number {
-  drawPdfBrand(doc);
+  const brandBottom = drawPdfBrand(doc);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
   doc.setTextColor(...TEXT_DARK);
-  doc.text(title, 14, 26);
+  // Judul ditempatkan 2 mm di bawah batas bawah kop (brandBottom = 24 → y = 26)
+  doc.text(title, 14, brandBottom + 2);
 
-  return 32;
+  // Kembalikan titik mulai tabel: 8 mm di bawah batas bawah kop (→ 32)
+  return brandBottom + 8;
 }
 
 /** Gambar kotak foto dengan rasio bebas (portrait 3:4 untuk pas foto). */
@@ -400,16 +412,20 @@ export function exportToPdf(
     // Halaman rincian anggota — setiap entitas punya mini-tabel autoTable sendiri
     if (entityDetails?.some(d => d.members.length > 0)) {
       doc.addPage();
-      drawPdfBrand(doc);
+      // brandBottom = 24 mm — batas bawah aman setelah seluruh elemen kop
+      let brandBottom = drawPdfBrand(doc);
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
       doc.setTextColor(...TEXT_DARK);
-      doc.text('Rincian Anggota', 14, 16);
+      // Judul "Rincian Anggota" dimulai 4 mm di bawah batas bawah kop (→ y=28),
+      // bukan 16 mm yang bertumpuk dengan PESANTREN_NAME di y=18.
+      doc.text('Rincian Anggota', 14, brandBottom + 4);
 
       const ph = doc.internal.pageSize.getHeight();
-      // curY: posisi Y saat ini, selalu dihitung dari finalY tabel sebelumnya
-      let curY = 22;
+      // curY: posisi Y saat ini — dimulai 11 mm setelah brandBottom (→ 35),
+      // memberi jarak cukup di bawah judul "Rincian Anggota".
+      let curY = brandBottom + 11;
 
       entityDetails.forEach((detail, idx) => {
         if (!detail.members.length) return;
@@ -418,8 +434,11 @@ export function exportToPdf(
         const MIN_HEIGHT = 20;
         if (curY + MIN_HEIGHT > ph - 15) {
           doc.addPage();
-          drawPdfBrand(doc);
-          curY = 14;
+          // Hitung ulang brandBottom dari kop yang baru digambar,
+          // lalu mulai konten 6 mm di bawahnya — bukan angka tetap 14 mm
+          // yang tertimpa oleh PESANTREN_NAME di y=18.
+          brandBottom = drawPdfBrand(doc);
+          curY = brandBottom + 6;
         }
 
         // Judul entitas
