@@ -93,7 +93,7 @@ export async function fetchSantriGroupedByKelasId(): Promise<Record<string, stri
   (data ?? []).forEach((s: any) => {
     if (!s.kelas_id) return;
     if (!grouped[s.kelas_id]) grouped[s.kelas_id] = [];
-    const label = s.nis ? `${s.nis} – ${s.nama_lengkap}` : s.nama_lengkap;
+    const label = s.nis ? `${s.nama_lengkap} (${s.nis})` : s.nama_lengkap;
     grouped[s.kelas_id].push(label);
   });
   return grouped;

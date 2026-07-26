@@ -45,18 +45,17 @@ export function SeksiDetail() {
     { label: 'Pembina',    value: (data as any).pembina?.nama_lengkap || '-' },
   ];
 
-  const daftarGuruTeks = guruAnggota && guruAnggota.length > 0
-    ? guruAnggota.map((g: any) => g.nama_lengkap).join('; ')
-    : 'Tidak ada guru anggota';
+  const exportFields = [...fields];
 
-  const exportFields = [
-    ...fields,
-    { label: 'Guru Anggota', value: daftarGuruTeks },
-  ];
+  const guruMemberSection = {
+    title: 'Guru Anggota',
+    columns: [{ key: 'nama_lengkap', header: 'Nama Lengkap' }],
+    rows: guruAnggota ?? [],
+  };
 
   const handleExport = async (type: 'docx' | 'pdf') => {
-    if (type === 'docx') await exportSingleToDocx('seksi', data.id, exportFields, `Profil Seksi - ${data.nama_seksi}`);
-    else await exportSingleToPdf('seksi', data.id, exportFields, `Profil Seksi - ${data.nama_seksi}`);
+    if (type === 'docx') await exportSingleToDocx('seksi', data.id, exportFields, `Profil Seksi - ${data.nama_seksi}`, [guruMemberSection]);
+    else await exportSingleToPdf('seksi', data.id, exportFields, `Profil Seksi - ${data.nama_seksi}`, null, [guruMemberSection]);
   };
 
   return (

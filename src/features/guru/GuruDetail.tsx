@@ -56,15 +56,32 @@ export function GuruDetail() {
     { label: 'Tanggal Lahir', value: formatTanggalDenganUsia(data.tanggal_lahir) },
     { label: 'Alamat',        value: data.alamat },
     { label: 'No Telepon',    value: data.no_telepon },
-    { label: 'Seksi',         value: seksiNama },
-    { label: 'Wali Kelas di', value: waliKelas && waliKelas.length > 0
-        ? waliKelas.map((wk: any) => wk.kelas?.nama_kelas).filter(Boolean).join('; ')
-        : '-' },
+    { label: 'Seksi', value: seksiNama },
+  ];
+
+  const seksiMemberSection = {
+    title: 'Seksi',
+    columns: [{ key: 'nama_seksi', header: 'Nama Seksi' }],
+    rows: data.guru_seksi?.map((gs: any) => gs.seksi).filter(Boolean) ?? [],
+  };
+
+  const waliMemberSection = {
+    title: 'Wali Kelas di',
+    columns: [
+      { key: 'nama_kelas', header: 'Nama Kelas' },
+      { key: 'tingkat',    header: 'Tingkat' },
+    ],
+    rows: waliKelas?.map((wk: any) => wk.kelas).filter(Boolean) ?? [],
+  };
+
+  const memberSections = [
+    ...(seksiMemberSection.rows.length  ? [seksiMemberSection]  : []),
+    ...(waliMemberSection.rows.length   ? [waliMemberSection]   : []),
   ];
 
   const handleExport = async (type: 'docx' | 'pdf') => {
-    if (type === 'docx') await exportSingleToDocx('guru', data.id, fields, `Profil Guru - ${data.nama_lengkap}`);
-    else await exportSingleToPdf('guru', data.id, fields, `Profil Guru - ${data.nama_lengkap}`, data.foto_url);
+    if (type === 'docx') await exportSingleToDocx('guru', data.id, fields, `Profil Guru - ${data.nama_lengkap}`, memberSections);
+    else await exportSingleToPdf('guru', data.id, fields, `Profil Guru - ${data.nama_lengkap}`, data.foto_url, memberSections);
   };
 
   return (

@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Document, Packer, Paragraph, TextRun } from 'docx';
+import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType } from 'docx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { toast } from 'sonner';
@@ -13,6 +13,25 @@ const TEXT_DARK = [31, 42, 40]    as [number, number, number]; // #1F2A28
 const WHITE     = [255, 255, 255] as [number, number, number];
 const APP_NAME = 'Codex — RAMA 6';
 const PESANTREN_NAME = "Raudhatul Ma'arif 6";
+
+/**
+ * Bagian anggota / relasi untuk ekspor single-record (DOCX & PDF).
+ * Ditampilkan sebagai tabel tersendiri di bawah tabel Field/Value utama.
+ */
+export interface MemberSection {
+  title: string;
+  columns: { key: string; header: string }[];
+  rows: any[];
+}
+
+/**
+ * Detail per entitas untuk ekspor daftar (MD & PDF).
+ * Ditampilkan sebagai bagian rincian setelah tabel ringkasan utama.
+ */
+export interface EntityDetail {
+  name: string;
+  members: string[];
+}
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -195,11 +214,18 @@ function addPdfFooter(doc: jsPDF) {
 
 // ─── XLSX ────────────────────────────────────────────────────────────────────
 
+/**
+ * Ekspor ke XLSX.
+ * @param memberColumnKeys - key kolom yang berisi nilai multi-baris (dipisah \n).
+ *   Kolom ini mendapat wrapText otomatis, lebar lebih lebar, dan tinggi baris
+ *   disesuaikan dengan jumlah baris konten.
+ */
 export function exportToXlsx(
   modul: string,
   konteks: string,
   rows: any[],
-  columns: { key: string; header: string }[]
+  columns: { key: string; header: string }[],
+  memberColumnKeys?: string[]
 ) {
   try {
     const data = rows.map(r => columns.map(c => r[c.key] ?? ''));
@@ -210,9 +236,44 @@ export function exportToXlsx(
       columns.map(c => c.header),
       ...data,
     ]);
+
+    // Lebar kolom: kolom anggota lebih lebar
+    ws['!cols'] = columns.map(c => ({
+      wch: memberColumnKeys?.includes(c.key) ? 45 : 22,
+    }));
+
+    // WrapText + tinggi baris untuk kolom anggota
+    if (memberColumnKeys?.length) {
+      const range = XLSX.utils.decode_range(ws['!ref']!);
+      const memberColIndices = columns
+        .map((c, i) => (memberColumnKeys.includes(c.key) ? i : -1))
+        .filter(i => i >= 0);
+
+      if (!ws['!rows']) ws['!rows'] = [];
+
+      // Baris data mulai di index 4 (0: APP_NAME, 1: PESANTREN, 2: kosong, 3: header)
+      for (let r = 4; r <= range.e.r; r++) {
+        let maxLines = 1;
+        for (const ci of memberColIndices) {
+          const addr = XLSX.utils.encode_cell({ r, c: ci });
+          if (ws[addr]) {
+            try {
+              ws[addr].s = { alignment: { wrapText: true, vertical: 'top' } };
+            } catch {
+              // Abaikan jika versi xlsx tidak mendukung style
+            }
+            const lines = String(ws[addr].v || '').split('\n').length;
+            maxLines = Math.max(maxLines, lines);
+          }
+        }
+        // Tinggi baris proporsional dengan jumlah baris konten (min 15pt)
+        (ws['!rows'] as any[])[r] = { hpt: Math.max(15, maxLines * 14) };
+      }
+    }
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, modul);
-    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
     const blob = new Blob([wbout], { type: 'application/octet-stream' });
     downloadBlob(blob, fileName(modul, konteks, 'xlsx'));
     toast.success('File XLSX berhasil diunduh');
@@ -223,21 +284,44 @@ export function exportToXlsx(
 
 // ─── Markdown ────────────────────────────────────────────────────────────────
 
+/**
+ * Ekspor ke Markdown.
+ * @param entityDetails - detail anggota per entitas. Jika diisi, tabel ringkasan
+ *   tidak menyertakan kolom anggota; detail per entitas ditambahkan sebagai
+ *   bagian rincian bertanda kepala (### Nama) dengan poin-poin di bawahnya.
+ */
 export function exportToMarkdown(
   modul: string,
   konteks: string,
   rows: any[],
-  columns: { key: string; header: string }[]
+  columns: { key: string; header: string }[],
+  entityDetails?: EntityDetail[]
 ) {
   try {
     let md = `# ${APP_NAME}\n\n## ${PESANTREN_NAME}\n\n### ${modul.toUpperCase()} - ${konteks || 'Semua Data'}\n\n`;
     md += `Tanggal ekspor: ${new Date().toLocaleDateString('id-ID')}\n\n`;
     md += `Total data: ${rows.length}\n\n`;
+
+    // Tabel ringkasan
     md += '| ' + columns.map(c => c.header).join(' | ') + ' |\n';
     md += '| ' + columns.map(() => '---').join(' | ') + ' |\n';
     rows.forEach(r => {
-      md += '| ' + columns.map(c => String(r[c.key] ?? '').replace(/\|/g, '\\|')).join(' | ') + ' |\n';
+      md += '| ' + columns.map(c =>
+        String(r[c.key] ?? '').replace(/\|/g, '\\|').replace(/\n/g, '; ')
+      ).join(' | ') + ' |\n';
     });
+
+    // Bagian rincian anggota per entitas
+    if (entityDetails?.some(d => d.members.length > 0)) {
+      md += '\n\n---\n\n## Rincian Anggota\n\n';
+      entityDetails.forEach((detail, i) => {
+        if (!detail.members.length) return;
+        md += `### ${i + 1}. ${detail.name}\n\n`;
+        detail.members.forEach(m => { md += `- ${m}\n`; });
+        md += '\n';
+      });
+    }
+
     const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
     downloadBlob(blob, fileName(modul, konteks, 'md'));
     toast.success('File Markdown berhasil diunduh');
@@ -248,11 +332,18 @@ export function exportToMarkdown(
 
 // ─── PDF list view ────────────────────────────────────────────────────────────
 
+/**
+ * Ekspor daftar ke PDF.
+ * @param entityDetails - detail anggota per entitas. Jika diisi, ditambahkan
+ *   halaman rincian setelah tabel ringkasan utama, dengan judul per entitas
+ *   dan daftar anggota berupa poin-poin.
+ */
 export function exportToPdf(
   modul: string,
   konteks: string,
   rows: any[],
-  columns: { key: string; header: string }[]
+  columns: { key: string; header: string }[],
+  entityDetails?: EntityDetail[]
 ) {
   try {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -279,6 +370,53 @@ export function exportToPdf(
       tableLineWidth: 0,
     });
 
+    // Halaman rincian anggota (landscape, sambung di halaman baru)
+    if (entityDetails?.some(d => d.members.length > 0)) {
+      doc.addPage();
+      drawPdfBrand(doc);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(...TEXT_DARK);
+      doc.text('Rincian Anggota', 14, 16);
+
+      const ph = doc.internal.pageSize.getHeight();
+      let curY = 22;
+
+      entityDetails.forEach((detail, idx) => {
+        if (!detail.members.length) return;
+
+        // Pindah halaman kalau sisa ruang kurang dari 25mm
+        if (curY > ph - 25) {
+          doc.addPage();
+          drawPdfBrand(doc);
+          curY = 14;
+        }
+
+        // Judul entitas
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(...PRIMARY);
+        doc.text(`${idx + 1}. ${detail.name}`, 14, curY);
+        curY += 4;
+
+        // Poin-poin anggota
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(...TEXT_DARK);
+        for (const member of detail.members) {
+          if (curY > ph - 20) {
+            doc.addPage();
+            drawPdfBrand(doc);
+            curY = 14;
+          }
+          doc.text(`• ${member}`, 18, curY);
+          curY += 5;
+        }
+        curY += 3;
+      });
+    }
+
     addPdfFooter(doc);
     doc.save(fileName(modul, konteks, 'pdf'));
     toast.success('File PDF berhasil diunduh');
@@ -289,13 +427,74 @@ export function exportToPdf(
 
 // ─── DOCX per-record ──────────────────────────────────────────────────────────
 
+/**
+ * Ekspor satu record ke DOCX.
+ * @param memberSections - bagian anggota/relasi. Masing-masing ditampilkan
+ *   sebagai tabel tersendiri (No. + kolom data) di bawah tabel Field/Value.
+ */
 export async function exportSingleToDocx(
   modul: string,
   id: string,
   fields: { label: string; value: any }[],
-  title: string
+  title: string,
+  memberSections?: MemberSection[]
 ) {
   try {
+    const fieldParagraphs = fields.map(f => new Paragraph({
+      children: [
+        new TextRun({ text: `${f.label}: `, bold: true }),
+        new TextRun(String(f.value ?? '-')),
+      ],
+      spacing: { after: 100 },
+    }));
+
+    // Elemen tambahan untuk setiap MemberSection
+    const sectionElements: (Paragraph | Table)[] = [];
+    if (memberSections?.length) {
+      for (const section of memberSections) {
+        if (!section.rows?.length) continue;
+
+        sectionElements.push(
+          new Paragraph({ text: '', spacing: { after: 100 } }),
+          new Paragraph({
+            children: [new TextRun({ text: section.title, bold: true, size: 22 })],
+            spacing: { after: 120 },
+          }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: [
+              // Baris header
+              new TableRow({
+                children: [
+                  new TableCell({
+                    children: [new Paragraph({ children: [new TextRun({ text: 'No.', bold: true })] })],
+                  }),
+                  ...section.columns.map(col =>
+                    new TableCell({
+                      children: [new Paragraph({ children: [new TextRun({ text: col.header, bold: true })] })],
+                    })
+                  ),
+                ],
+              }),
+              // Baris data
+              ...section.rows.map((row, i) =>
+                new TableRow({
+                  children: [
+                    new TableCell({ children: [new Paragraph({ text: String(i + 1) })] }),
+                    ...section.columns.map(col =>
+                      new TableCell({
+                        children: [new Paragraph({ text: String(row[col.key] ?? '-') })],
+                      })
+                    ),
+                  ],
+                })
+              ),
+            ],
+          }),
+        );
+      }
+    }
+
     const doc = new Document({
       sections: [{
         properties: {},
@@ -304,13 +503,8 @@ export async function exportSingleToDocx(
           new Paragraph({ text: PESANTREN_NAME, spacing: { after: 200 } }),
           new Paragraph({ text: title, heading: 'Heading1' as any }),
           new Paragraph({ text: `ID: ${id}`, spacing: { after: 200 } }),
-          ...fields.map(f => new Paragraph({
-            children: [
-              new TextRun({ text: `${f.label}: `, bold: true }),
-              new TextRun(String(f.value ?? '-')),
-            ],
-            spacing: { after: 100 },
-          })),
+          ...fieldParagraphs,
+          ...sectionElements,
         ],
       }],
     });
@@ -324,12 +518,18 @@ export async function exportSingleToDocx(
 
 // ─── PDF per-record ───────────────────────────────────────────────────────────
 
+/**
+ * Ekspor satu record ke PDF.
+ * @param memberSections - bagian anggota/relasi. Masing-masing ditampilkan
+ *   sebagai tabel autoTable tersendiri di bawah tabel Field/Value utama.
+ */
 export async function exportSingleToPdf(
   modul: string,
   id: string,
   fields: { label: string; value: any }[],
   title: string,
   photoPath?: string | null,
+  memberSections?: MemberSection[]
 ) {
   try {
     let photo: PdfPhoto | null = null;
@@ -368,15 +568,44 @@ export async function exportSingleToPdf(
       tableLineWidth: 0,
     });
 
-    const ph = doc.internal.pageSize.getHeight();
-    const pw = doc.internal.pageSize.getWidth();
-    doc.setFillColor(...ACCENT);
-    doc.rect(0, ph - 2, pw, 2, 'F');
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.setTextColor(150, 150, 150);
-    doc.text(`${APP_NAME} — ${PESANTREN_NAME}`, 14, ph - 4);
+    // Render setiap MemberSection sebagai autoTable terpisah di bawah tabel utama
+    if (memberSections?.length) {
+      for (const section of memberSections) {
+        if (!section.rows?.length) continue;
 
+        const prevFinalY = (doc as any).lastAutoTable?.finalY ?? startY + 10;
+        const ph = doc.internal.pageSize.getHeight();
+
+        // Posisi judul bagian; pindah halaman kalau perlu
+        let sectionTitleY = prevFinalY + 8;
+        if (sectionTitleY > ph - 30) {
+          doc.addPage();
+          sectionTitleY = 18;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(...TEXT_DARK);
+        doc.text(section.title, 14, sectionTitleY);
+
+        autoTable(doc, {
+          startY: sectionTitleY + 4,
+          head: [['No.', ...section.columns.map(c => c.header)]],
+          body: section.rows.map((r, i) => [
+            String(i + 1),
+            ...section.columns.map(c => String(r[c.key] ?? '-')),
+          ]),
+          theme: 'striped',
+          headStyles: { fillColor: PRIMARY, textColor: WHITE, fontStyle: 'bold', fontSize: 9, lineWidth: 0 },
+          bodyStyles: { fontSize: 9, textColor: TEXT_DARK },
+          alternateRowStyles: { fillColor: BG_LIGHT },
+          margin: { left: 14, right: 14 },
+          tableLineWidth: 0,
+        });
+      }
+    }
+
+    addPdfFooter(doc);
     doc.save(fileName(modul, id, 'pdf'));
     toast.success('File PDF berhasil diunduh');
   } catch (e: any) {

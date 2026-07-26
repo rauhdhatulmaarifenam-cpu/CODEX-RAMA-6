@@ -10,7 +10,7 @@ import { Search, Plus, Trash2, Eye, Clock, Pencil, BarChart2 } from 'lucide-reac
 import { useAuth } from '../auth/AuthContext';
 import { toast } from 'sonner';
 import { ExportMenu } from '../../components/ExportMenu';
-import { exportToXlsx, exportToMarkdown, exportToPdf } from '../export/exporters';
+import { exportToXlsx, exportToMarkdown, exportToPdf, EntityDetail } from '../export/exporters';
 import { fetchAllGuru, fetchKelasWaliByGuruIds } from './api';
 import { formatTanggalDenganUsia } from '../../lib/dateUtils';
 import { motion } from 'framer-motion';
@@ -44,29 +44,50 @@ export function GuruList() {
     const tid = toast.loading('Memuat seluruh data guru...');
     try {
       const allData = await fetchAllGuru({
-        search:   search   || undefined,
-        seksiId:  seksiFilter || undefined,
+        search:  search      || undefined,
+        seksiId: seksiFilter || undefined,
       });
       const kelasWaliMap = await fetchKelasWaliByGuruIds(allData.map((g: any) => g.id));
       toast.dismiss(tid);
-      const cols = [
-        { key: 'nama_lengkap',       header: 'Nama' },
-        { key: 'nip',                header: 'NIP' },
-        { key: 'tanggal_lahir_usia', header: 'Tgl Lahir (Usia)' },
-        { key: 'seksi_nama',         header: 'Seksi' },
-        { key: 'kelas_wali_nama',    header: 'Wali Kelas di' },
-        { key: 'status',             header: 'Status' },
-      ];
+
       const mapped = allData.map((g: any) => ({
         ...g,
         nip:                g.nip || '-',
         tanggal_lahir_usia: formatTanggalDenganUsia(g.tanggal_lahir),
-        seksi_nama:         g.guru_seksi?.map((gs: any) => gs.seksi?.nama_seksi).filter(Boolean).join('; ') || '-',
-        kelas_wali_nama:    kelasWaliMap[g.id]?.join('; ') || '-',
+        seksi_nama:         g.guru_seksi?.map((gs: any) => gs.seksi?.nama_seksi).filter(Boolean).join('\n') || '-',
+        kelas_wali_nama:    kelasWaliMap[g.id]?.join('\n') || '-',
+        status:             g.status || '-',
       }));
-      if (type === 'xlsx')    exportToXlsx('guru', 'semua', mapped, cols);
-      else if (type === 'md') exportToMarkdown('guru', 'semua', mapped, cols);
-      else                    exportToPdf('guru', 'semua', mapped, cols);
+
+      if (type === 'xlsx') {
+        const cols = [
+          { key: 'nama_lengkap',       header: 'Nama' },
+          { key: 'nip',                header: 'NIP' },
+          { key: 'tanggal_lahir_usia', header: 'Tgl Lahir (Usia)' },
+          { key: 'seksi_nama',         header: 'Seksi' },
+          { key: 'kelas_wali_nama',    header: 'Wali Kelas di' },
+          { key: 'status',             header: 'Status' },
+        ];
+        exportToXlsx('guru', 'semua', mapped, cols, ['seksi_nama', 'kelas_wali_nama']);
+      } else {
+        // MD / PDF: tabel ringkasan (core cols) + rincian seksi & wali kelas per guru
+        const summaryCols = [
+          { key: 'nama_lengkap',       header: 'Nama' },
+          { key: 'nip',                header: 'NIP' },
+          { key: 'tanggal_lahir_usia', header: 'Tgl Lahir (Usia)' },
+          { key: 'status',             header: 'Status' },
+        ];
+        const entityDetails: EntityDetail[] = mapped.map((g: any) => {
+          const lines: string[] = [];
+          if (g.seksi_nama && g.seksi_nama !== '-')
+            g.seksi_nama.split('\n').forEach((s: string) => lines.push(`Seksi: ${s}`));
+          if (g.kelas_wali_nama && g.kelas_wali_nama !== '-')
+            g.kelas_wali_nama.split('\n').forEach((k: string) => lines.push(`Wali Kelas: ${k}`));
+          return { name: g.nama_lengkap, members: lines };
+        });
+        if (type === 'md') exportToMarkdown('guru', 'semua', mapped, summaryCols, entityDetails);
+        else               exportToPdf('guru', 'semua', mapped, summaryCols, entityDetails);
+      }
     } catch (e: any) {
       toast.dismiss(tid);
       toast.error('Gagal memuat data ekspor: ' + (e?.message || 'Error tidak diketahui'));

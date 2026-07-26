@@ -9,7 +9,7 @@ import { Search, Plus, Trash2, Eye, Clock, Pencil, BarChart2 } from 'lucide-reac
 import { useAuth } from '../auth/AuthContext';
 import { toast } from 'sonner';
 import { ExportMenu } from '../../components/ExportMenu';
-import { exportToXlsx, exportToMarkdown, exportToPdf } from '../export/exporters';
+import { exportToXlsx, exportToMarkdown, exportToPdf, EntityDetail } from '../export/exporters';
 import { fetchAllKelas, fetchSantriGroupedByKelasId } from './api';
 import { motion } from 'framer-motion';
 import { useRealtime } from '../../hooks/useRealtime';
@@ -74,15 +74,7 @@ export function KelasList() {
         fetchSantriGroupedByKelasId(),
       ]);
       toast.dismiss(tid);
-      const cols = [
-        { key: 'nama_kelas',     header: 'Nama Kelas' },
-        { key: 'kategori',       header: 'Kategori' },
-        { key: 'tingkat',        header: 'Tingkat' },
-        { key: 'tahun_ajaran',   header: 'Tahun Ajaran' },
-        { key: 'wali_nama',      header: 'Wali Kelas' },
-        { key: 'kapasitas',      header: 'Kapasitas' },
-        { key: 'santri_anggota', header: 'Daftar Santri Anggota' },
-      ];
+
       const mapped = allData.map((k: any) => ({
         ...k,
         kategori:       k.kategori     || '-',
@@ -90,11 +82,37 @@ export function KelasList() {
         tahun_ajaran:   k.tahun_ajaran || '-',
         kapasitas:      k.kapasitas    || '-',
         wali_nama:      k.kelas_wali?.map((kw: any) => kw.guru?.nama_lengkap).filter(Boolean).join('; ') || '-',
-        santri_anggota: santriGrouped[k.id]?.join('; ') || '-',
+        santri_anggota: santriGrouped[k.id]?.join('\n') || '-',
       }));
-      if (type === 'xlsx')    exportToXlsx('kelas', 'semua', mapped, cols);
-      else if (type === 'md') exportToMarkdown('kelas', 'semua', mapped, cols);
-      else                    exportToPdf('kelas', 'semua', mapped, cols);
+
+      if (type === 'xlsx') {
+        const cols = [
+          { key: 'nama_kelas',     header: 'Nama Kelas' },
+          { key: 'kategori',       header: 'Kategori' },
+          { key: 'tingkat',        header: 'Tingkat' },
+          { key: 'tahun_ajaran',   header: 'Tahun Ajaran' },
+          { key: 'wali_nama',      header: 'Wali Kelas' },
+          { key: 'kapasitas',      header: 'Kapasitas' },
+          { key: 'santri_anggota', header: 'Daftar Santri Anggota' },
+        ];
+        exportToXlsx('kelas', 'semua', mapped, cols, ['santri_anggota']);
+      } else {
+        // MD / PDF: tabel ringkasan (tanpa kolom anggota) + rincian per kelas
+        const summaryCols = [
+          { key: 'nama_kelas',   header: 'Nama Kelas' },
+          { key: 'kategori',     header: 'Kategori' },
+          { key: 'tingkat',      header: 'Tingkat' },
+          { key: 'tahun_ajaran', header: 'Tahun Ajaran' },
+          { key: 'wali_nama',    header: 'Wali Kelas' },
+          { key: 'kapasitas',    header: 'Kapasitas' },
+        ];
+        const entityDetails: EntityDetail[] = mapped.map((k: any) => ({
+          name: k.nama_kelas,
+          members: santriGrouped[k.id] ?? [],
+        }));
+        if (type === 'md') exportToMarkdown('kelas', 'semua', mapped, summaryCols, entityDetails);
+        else               exportToPdf('kelas', 'semua', mapped, summaryCols, entityDetails);
+      }
     } catch (e: any) {
       toast.dismiss(tid);
       toast.error('Gagal memuat data ekspor: ' + (e?.message || 'Error tidak diketahui'));
