@@ -82,7 +82,14 @@ export function SantriList() {
         kelas: (r as any).kelas?.nama_kelas || '-',
         tanggal_lahir_usia: formatTanggalDenganUsia(r.tanggal_lahir),
       }));
-      const konteks = `kelas-${kelasFilter || 'semua'}_status-${statusFilter || 'semua'}`;
+      // Label filter yang enak dibaca (kosong = tidak ada filter aktif)
+      const kelasNama = kelasFilter
+        ? (kelasData?.data.find(k => k.id === kelasFilter)?.nama_kelas ?? '')
+        : '';
+      const statusLabel = statusFilter
+        ? statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)
+        : '';
+      const konteks = [kelasNama, statusLabel].filter(Boolean).join(' ');
       if (type === 'xlsx')    exportToXlsx('santri', konteks, mapped, cols);
       else if (type === 'md') exportToMarkdown('santri', konteks, mapped, cols);
       else                    exportToPdf('santri', konteks, mapped, cols);

@@ -68,7 +68,10 @@ export function GuruList() {
           { key: 'kelas_wali_nama',    header: 'Wali Kelas di' },
           { key: 'status',             header: 'Status' },
         ];
-        exportToXlsx('guru', 'semua', mapped, cols, ['seksi_nama', 'kelas_wali_nama']);
+        const seksiNamaXlsx = seksiFilter
+          ? (seksiData?.data.find(s => s.id === seksiFilter)?.nama_seksi ?? '')
+          : '';
+        exportToXlsx('guru', seksiNamaXlsx, mapped, cols, ['seksi_nama', 'kelas_wali_nama']);
       } else {
         // MD / PDF: tabel ringkasan (core cols) + rincian seksi & wali kelas per guru
         const summaryCols = [
@@ -85,8 +88,11 @@ export function GuruList() {
             g.kelas_wali_nama.split('\n').forEach((k: string) => lines.push(`Wali Kelas: ${k}`));
           return { name: g.nama_lengkap, members: lines };
         });
-        if (type === 'md') exportToMarkdown('guru', 'semua', mapped, summaryCols, entityDetails);
-        else               exportToPdf('guru', 'semua', mapped, summaryCols, entityDetails);
+        const seksiNama = seksiFilter
+          ? (seksiData?.data.find(s => s.id === seksiFilter)?.nama_seksi ?? '')
+          : '';
+        if (type === 'md') exportToMarkdown('guru', seksiNama, mapped, summaryCols, entityDetails);
+        else               exportToPdf('guru', seksiNama, mapped, summaryCols, entityDetails);
       }
     } catch (e: any) {
       toast.dismiss(tid);
@@ -101,7 +107,7 @@ export function GuruList() {
           <h1 className="font-heading text-2xl font-bold">Guru</h1>
           <p className="text-sm text-text-secondary">{data?.count || 0} guru</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <ExportMenu onExport={handleExport as any} />
           <Button variant="secondary" onClick={() => navigate('/guru/laporan')} leftIcon={<BarChart2 className="w-4 h-4" />}>Lihat Laporan</Button>
           <Button onClick={() => navigate('/guru/baru')} leftIcon={<Plus className="w-4 h-4" />}>Tambah Guru</Button>

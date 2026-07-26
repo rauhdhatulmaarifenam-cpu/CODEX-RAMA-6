@@ -95,7 +95,7 @@ export function KelasList() {
           { key: 'kapasitas',      header: 'Kapasitas' },
           { key: 'santri_anggota', header: 'Daftar Santri Anggota' },
         ];
-        exportToXlsx('kelas', 'semua', mapped, cols, ['santri_anggota']);
+        exportToXlsx('kelas', '', mapped, cols, ['santri_anggota']);
       } else {
         // MD / PDF: tabel ringkasan (tanpa kolom anggota) + rincian per kelas
         const summaryCols = [
@@ -110,8 +110,8 @@ export function KelasList() {
           name: k.nama_kelas,
           members: santriGrouped[k.id] ?? [],
         }));
-        if (type === 'md') exportToMarkdown('kelas', 'semua', mapped, summaryCols, entityDetails);
-        else               exportToPdf('kelas', 'semua', mapped, summaryCols, entityDetails);
+        if (type === 'md') exportToMarkdown('kelas', '', mapped, summaryCols, entityDetails);
+        else               exportToPdf('kelas', '', mapped, summaryCols, entityDetails);
       }
     } catch (e: any) {
       toast.dismiss(tid);

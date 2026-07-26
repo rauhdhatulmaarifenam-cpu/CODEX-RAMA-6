@@ -41,7 +41,7 @@ export function SeksiList(){
           { key: 'pembina',      header: 'Pembina' },
           { key: 'anggota_guru', header: 'Guru Anggota' },
         ];
-        exportToXlsx('seksi', 'semua', mapped, cols, ['anggota_guru']);
+        exportToXlsx('seksi', '', mapped, cols, ['anggota_guru']);
       } else {
         // MD / PDF: tabel ringkasan (tanpa kolom anggota) + rincian per seksi
         const summaryCols = [
@@ -53,8 +53,8 @@ export function SeksiList(){
           name:    r.nama_seksi,
           members: (r._guru_anggota as string[] | undefined) ?? [],
         }));
-        if (type === 'md') exportToMarkdown('seksi', 'semua', mapped, summaryCols, entityDetails);
-        else               exportToPdf('seksi', 'semua', mapped, summaryCols, entityDetails);
+        if (type === 'md') exportToMarkdown('seksi', '', mapped, summaryCols, entityDetails);
+        else               exportToPdf('seksi', '', mapped, summaryCols, entityDetails);
       }
     } catch (e: any) {
       toast.dismiss(tid);
@@ -63,7 +63,7 @@ export function SeksiList(){
   };
   return (
     <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h1 className="font-heading text-2xl font-bold">Seksi</h1><p className="text-sm text-text-secondary">{data?.count||0} seksi</p></div><div className="flex gap-2"><ExportMenu onExport={handleExport as any}/><Button variant="secondary" onClick={()=>navigate('/seksi/laporan')} leftIcon={<BarChart2 className="w-4 h-4"/>}>Lihat Laporan</Button><Button onClick={()=>navigate('/seksi/baru')} leftIcon={<Plus className="w-4 h-4"/>}>Tambah Seksi</Button></div></div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><h1 className="font-heading text-2xl font-bold">Seksi</h1><p className="text-sm text-text-secondary">{data?.count||0} seksi</p></div><div className="flex items-center gap-2"><ExportMenu onExport={handleExport as any}/><Button variant="secondary" onClick={()=>navigate('/seksi/laporan')} leftIcon={<BarChart2 className="w-4 h-4"/>}>Lihat Laporan</Button><Button onClick={()=>navigate('/seksi/baru')} leftIcon={<Plus className="w-4 h-4"/>}>Tambah Seksi</Button></div></div>
       <div className="relative"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari seksi..." className="input-field pl-10"/></div>
       {isLoading?<TableSkeleton/>:!data?.data.length?<EmptyState title="Belum ada seksi" actionLabel="Tambah Seksi" onAction={()=>navigate('/seksi/baru')}/>:(
         <TableWrapper><TableHeader><TableHead>Nama Seksi</TableHead><TableHead>Deskripsi</TableHead><TableHead>Pembina</TableHead><TableHead>Aksi</TableHead></TableHeader><TableBody>{data.data.map((s:any,i:number)=><motion.tr key={s.id} initial={{opacity:0,y:4}} animate={{opacity:1,y:0}} transition={{delay:i*0.02}} className="hover:bg-background/60"><TableCell className="font-medium">{s.nama_seksi} {s._pendingSync && <Clock className="w-3 h-3 inline text-amber-600"/>}</TableCell><TableCell className="max-w-xs truncate">{s.deskripsi||'-'}</TableCell><TableCell>{s.pembina?.nama_lengkap||'-'}</TableCell><TableCell><div className="flex gap-1"><Button variant="ghost" size="sm" onClick={()=>navigate(`/seksi/${s.id}`)}><Eye className="w-4 h-4"/></Button><Button variant="ghost" size="sm" onClick={()=>navigate(`/seksi/${s.id}?edit=1`)}><Pencil className="w-4 h-4"/></Button>{canDelete && <Button variant="ghost" size="sm" onClick={()=>setDeleteId(s.id)} className="text-danger"><Trash2 className="w-4 h-4"/></Button>}</div></TableCell></motion.tr>)}</TableBody></TableWrapper>

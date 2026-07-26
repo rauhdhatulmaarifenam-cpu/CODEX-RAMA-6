@@ -113,10 +113,33 @@ async function loadPdfPhoto(photoPath?: string | null): Promise<PdfPhoto | null>
   }
 }
 
-function fileName(modul: string, konteks: string, ext: string) {
-  const date = new Date().toISOString().slice(0, 10);
-  const safeKonteks = konteks ? `_${konteks.replace(/[^a-zA-Z0-9-_]/g, '_')}` : '';
-  return `${modul}${safeKonteks}_${date}.${ext}`;
+/** Label modul yang ditampilkan di nama file */
+const MODULE_LABELS: Record<string, string> = {
+  santri: 'Data Santri',
+  kelas:  'Data Kelas',
+  guru:   'Data Guru',
+  seksi:  'Data Seksi',
+};
+
+/**
+ * Bangun nama file yang enak dibaca manusia.
+ * @param label - label lengkap sudah termasuk filter (bila ada), misal "Data Santri Kelas A"
+ * @param ext - ekstensi tanpa titik
+ */
+function fileName(label: string, ext: string) {
+  const date = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+  const safe = `${label} ${date}`.replace(/[/\\:*?"<>|]/g, '-');
+  return `${safe}.${ext}`;
+}
+
+/**
+ * Nama file untuk ekspor daftar.
+ * @param modul - 'santri'|'kelas'|'guru'|'seksi'
+ * @param filterLabel - label filter yang aktif, kosong jika tidak ada filter
+ */
+function listFileName(modul: string, filterLabel: string, ext: string) {
+  const base = MODULE_LABELS[modul] ?? modul;
+  return fileName(filterLabel ? `${base} ${filterLabel}` : base, ext);
 }
 
 function drawPdfBrand(doc: jsPDF) {
@@ -275,7 +298,7 @@ export function exportToXlsx(
     XLSX.utils.book_append_sheet(wb, ws, modul);
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
     const blob = new Blob([wbout], { type: 'application/octet-stream' });
-    downloadBlob(blob, fileName(modul, konteks, 'xlsx'));
+    downloadBlob(blob, listFileName(modul, konteks, 'xlsx'));
     toast.success('File XLSX berhasil diunduh');
   } catch (e: any) {
     toast.error('Gagal ekspor XLSX: ' + (e?.message || 'Error tidak diketahui'));
@@ -311,19 +334,23 @@ export function exportToMarkdown(
       ).join(' | ') + ' |\n';
     });
 
-    // Bagian rincian anggota per entitas
+    // Bagian rincian anggota per entitas — setiap entitas punya tabel sendiri
     if (entityDetails?.some(d => d.members.length > 0)) {
       md += '\n\n---\n\n## Rincian Anggota\n\n';
       entityDetails.forEach((detail, i) => {
         if (!detail.members.length) return;
         md += `### ${i + 1}. ${detail.name}\n\n`;
-        detail.members.forEach(m => { md += `- ${m}\n`; });
+        md += '| No. | Nama |\n';
+        md += '| --- | --- |\n';
+        detail.members.forEach((m, j) => {
+          md += `| ${j + 1} | ${String(m).replace(/\|/g, '\\|')} |\n`;
+        });
         md += '\n';
       });
     }
 
     const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-    downloadBlob(blob, fileName(modul, konteks, 'md'));
+    downloadBlob(blob, listFileName(modul, konteks, 'md'));
     toast.success('File Markdown berhasil diunduh');
   } catch (e: any) {
     toast.error('Gagal ekspor Markdown: ' + (e?.message || 'Error tidak diketahui'));
@@ -370,7 +397,7 @@ export function exportToPdf(
       tableLineWidth: 0,
     });
 
-    // Halaman rincian anggota (landscape, sambung di halaman baru)
+    // Halaman rincian anggota — setiap entitas punya mini-tabel autoTable sendiri
     if (entityDetails?.some(d => d.members.length > 0)) {
       doc.addPage();
       drawPdfBrand(doc);
@@ -381,13 +408,15 @@ export function exportToPdf(
       doc.text('Rincian Anggota', 14, 16);
 
       const ph = doc.internal.pageSize.getHeight();
+      // curY: posisi Y saat ini, selalu dihitung dari finalY tabel sebelumnya
       let curY = 22;
 
       entityDetails.forEach((detail, idx) => {
         if (!detail.members.length) return;
 
-        // Pindah halaman kalau sisa ruang kurang dari 25mm
-        if (curY > ph - 25) {
+        // Estimasi tinggi minimum: judul (6mm) + header + 1 baris ≈ 20mm
+        const MIN_HEIGHT = 20;
+        if (curY + MIN_HEIGHT > ph - 15) {
           doc.addPage();
           drawPdfBrand(doc);
           curY = 14;
@@ -398,27 +427,37 @@ export function exportToPdf(
         doc.setFontSize(9);
         doc.setTextColor(...PRIMARY);
         doc.text(`${idx + 1}. ${detail.name}`, 14, curY);
-        curY += 4;
+        curY += 5;
 
-        // Poin-poin anggota
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(...TEXT_DARK);
-        for (const member of detail.members) {
-          if (curY > ph - 20) {
-            doc.addPage();
-            drawPdfBrand(doc);
-            curY = 14;
-          }
-          doc.text(`• ${member}`, 18, curY);
-          curY += 5;
-        }
-        curY += 3;
+        // Mini-tabel anggota — autoTable menangani pindah halaman internal secara otomatis
+        autoTable(doc, {
+          startY: curY,
+          head: [['No.', 'Nama']],
+          body: detail.members.map((m, i) => [String(i + 1), m]),
+          theme: 'striped',
+          headStyles: { fillColor: PRIMARY, textColor: WHITE, fontStyle: 'bold', fontSize: 8, lineWidth: 0 },
+          bodyStyles: { fontSize: 8, textColor: TEXT_DARK },
+          alternateRowStyles: { fillColor: BG_LIGHT },
+          columnStyles: { 0: { cellWidth: 12, halign: 'center' } },
+          didDrawCell(data) {
+            if (data.section === 'head' && data.row.index === 0) {
+              const { x, y, width, height } = data.cell;
+              doc.setDrawColor(...ACCENT);
+              doc.setLineWidth(0.4);
+              doc.line(x, y + height, x + width, y + height);
+            }
+          },
+          margin: { left: 14, right: 14 },
+          tableLineWidth: 0,
+        });
+
+        // Posisi berikutnya = bawah tabel yang baru selesai + jarak 8mm
+        curY = ((doc as any).lastAutoTable?.finalY ?? curY) + 8;
       });
     }
 
     addPdfFooter(doc);
-    doc.save(fileName(modul, konteks, 'pdf'));
+    doc.save(listFileName(modul, konteks, 'pdf'));
     toast.success('File PDF berhasil diunduh');
   } catch (e: any) {
     toast.error('Gagal ekspor PDF: ' + (e?.message || 'Error tidak diketahui'));
@@ -509,7 +548,8 @@ export async function exportSingleToDocx(
       }],
     });
     const blob = await Packer.toBlob(doc);
-    downloadBlob(blob, fileName(modul, id, 'docx'));
+    // Nama file: judul dokumen (tanpa tanda " - ") + tanggal
+    downloadBlob(blob, fileName(title.replace(/\s*[-–]\s*/g, ' '), 'docx'));
     toast.success('File DOCX berhasil diunduh');
   } catch (e: any) {
     toast.error('Gagal ekspor DOCX: ' + (e?.message || 'Error tidak diketahui'));
@@ -606,7 +646,8 @@ export async function exportSingleToPdf(
     }
 
     addPdfFooter(doc);
-    doc.save(fileName(modul, id, 'pdf'));
+    // Nama file: judul dokumen (tanpa tanda " - ") + tanggal
+    doc.save(fileName(title.replace(/\s*[-–]\s*/g, ' '), 'pdf'));
     toast.success('File PDF berhasil diunduh');
   } catch (e: any) {
     toast.error('Gagal ekspor PDF: ' + (e?.message || 'Error tidak diketahui'));
