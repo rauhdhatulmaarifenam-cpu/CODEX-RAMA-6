@@ -17,55 +17,69 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser]       = useState<any | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  // loading=true sampai sesi + profil selesai divalidasi sepenuhnya.
+  // ProtectedRoute memblokir render children selama loading=true,
+  // sehingga React Query tidak pernah menembak query sebelum sesi siap.
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+  /**
+   * Ambil profil dari tabel profiles.
+   * Mengembalikan null jika tidak ditemukan ATAU akun nonaktif.
+   * Tidak memiliki efek samping (signOut ditangani oleh pemanggil).
+   */
+  const fetchProfile = async (userId: string): Promise<Profile | null> => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
     if (error) {
       console.error('fetchProfile error', error);
       return null;
     }
-    // Check if nonaktif
-    if (data.status === 'nonaktif') {
-      await supabase.auth.signOut();
-      return null;
-    }
+    if (data.status === 'nonaktif') return null;
     return data as Profile;
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      const sessUser = data.session?.user ?? null;
-      setUser(sessUser);
-      if (sessUser) {
-        const prof = await fetchProfile(sessUser.id);
-        setProfile(prof);
-        if (!prof) {
-          await supabase.auth.signOut();
-          setUser(null);
-        }
-      }
-      setLoading(false);
-    });
+    /**
+     * Bergantung sepenuhnya pada onAuthStateChange untuk manajemen sesi.
+     * Event pertama yang diterima adalah INITIAL_SESSION yang langsung
+     * membawa state sesi saat ini dari localStorage.
+     *
+     * Pola kritis — setLoading(true) di awal setiap event:
+     *   Ini memastikan ProtectedRoute memblokir rendering children (dan
+     *   React Query di dalamnya) selama transisi auth berlangsung, termasuk
+     *   tepat setelah sign up baru. Tanpa ini, query bisa menembak sebelum
+     *   sesi benar-benar terdaftar di Supabase client, RLS mengembalikan
+     *   hasil kosong, dan hasil kosong itu ter-cache oleh React Query.
+     */
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        const sessUser = session?.user ?? null;
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const sessUser = session?.user ?? null;
-      setUser(sessUser);
-      if (sessUser) {
-        const prof = await fetchProfile(sessUser.id);
-        setProfile(prof);
-        if (!prof) {
-          await supabase.auth.signOut();
-          setUser(null);
+        // Gate rendering hingga siklus penuh (session + profile) selesai.
+        setLoading(true);
+        setUser(sessUser);
+
+        if (sessUser) {
+          const prof = await fetchProfile(sessUser.id);
+          setProfile(prof);
+          if (!prof) {
+            // Akun nonaktif atau profil tidak ditemukan — paksa sign out.
+            await supabase.auth.signOut();
+            setUser(null);
+            setProfile(null);
+          }
+        } else {
           setProfile(null);
         }
-      } else {
-        setProfile(null);
+
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    );
 
     return () => listener.subscription.unsubscribe();
   }, []);
@@ -76,15 +90,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password: seed });
       if (error) return { error };
 
+      // Periksa akun nonaktif sebelum redirect.
+      // Jika nonaktif, fetchProfile mengembalikan null → paksa sign out
+      // dan kembalikan pesan yang jelas ke LoginPage.
       if (data.user) {
         const prof = await fetchProfile(data.user.id);
         if (!prof) {
           await supabase.auth.signOut();
           return { error: { message: 'Akun Anda telah dinonaktifkan. Hubungi super admin.' } };
         }
-        setProfile(prof);
-        setUser(data.user);
       }
+
+      // Update state (user, profile, loading) diurus oleh onAuthStateChange
+      // yang terpicu oleh signInWithPassword di atas.
       return { error: null };
     } catch (e: any) {
       return { error: e };
@@ -93,40 +111,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (nickname: string, nama_lengkap: string, seed: string) => {
     try {
-      // check nickname uniqueness (case-insensitive)
-      const { data: existing } = await supabase.from('profiles').select('id').ilike('nickname', nickname).maybeSingle();
-      // Actually use lower() index; simpler: query all? We'll try lowecasse eq via rpc? Use filter
-      // We'll also check via lower(nickname) in query if possible, but ilike works for conflict prevention
+      // Cek unik nickname (case-insensitive)
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('nickname', nickname)
+        .maybeSingle();
       if (existing) {
         return { error: { message: 'Nickname sudah dipakai' } };
       }
 
       const email = nicknameToEmail(nickname);
-      const { data, error } = await supabase.auth.signUp({ email, password: seed });
-      if (error) return { error };
-
-      if (!data.user) {
-        return { error: { message: 'Gagal membuat akun' } };
-      }
-
-      // Insert profile
-      const { error: profileError } = await supabase.from('profiles').insert({
-        id: data.user.id,
-        nickname: nickname.trim(),
-        nama_lengkap: nama_lengkap.trim(),
-        role: 'guru' as RoleType,
-        status: 'aktif',
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: seed,
+        options: {
+          // nickname dan nama_lengkap dikirim sebagai raw_user_meta_data.
+          // Trigger on_auth_user_created di database membaca metadata ini
+          // dan membuat baris profil otomatis di sisi server — role dan
+          // status selalu dipaksa 'guru' / 'aktif' oleh trigger, tidak
+          // bisa di-override dari sini.
+          data: {
+            nickname:     nickname.trim(),
+            nama_lengkap: nama_lengkap.trim(),
+          },
+        },
       });
+      if (error) return { error };
+      if (!data.user) return { error: { message: 'Gagal membuat akun' } };
 
-      if (profileError) {
-        // If profile insert fails, maybe delete auth user? Can't from client. Just return error
-        return { error: profileError };
-      }
-
-      setUser(data.user);
-      const prof = await fetchProfile(data.user.id);
-      setProfile(prof);
-
+      // Profil sudah dibuat oleh trigger database (AFTER INSERT ON auth.users).
+      // Update state (user, profile, loading) diurus oleh onAuthStateChange
+      // yang terpicu oleh signUp di atas — tidak perlu setState manual di sini.
       return { error: null };
     } catch (e: any) {
       return { error: e };
@@ -140,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isSuperAdmin = profile?.role === 'super_admin';
-  const canDelete = profile?.role === 'guru_super' || profile?.role === 'super_admin';
+  const canDelete    = profile?.role === 'guru_super' || profile?.role === 'super_admin';
 
   return (
     <AuthContext.Provider value={{ user, profile, loading, signIn, signUp, signOut, isSuperAdmin, canDelete }}>

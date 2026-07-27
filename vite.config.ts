@@ -68,4 +68,56 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        /**
+         * Pisahkan vendor besar ke chunk tersendiri sehingga setiap
+         * chunk < 500 KB dan browser bisa cache vendor secara independen.
+         */
+        manualChunks(id: string) {
+          // React core + router
+          if (id.includes('node_modules/react/') ||
+              id.includes('node_modules/react-dom/') ||
+              id.includes('node_modules/react-router')) {
+            return 'vendor-react';
+          }
+          // Supabase client
+          if (id.includes('node_modules/@supabase/')) {
+            return 'vendor-supabase';
+          }
+          // TanStack Query
+          if (id.includes('node_modules/@tanstack/')) {
+            return 'vendor-query';
+          }
+          // Framer Motion
+          if (id.includes('node_modules/framer-motion')) {
+            return 'vendor-motion';
+          }
+          // Charts (recharts + d3-*)
+          if (id.includes('node_modules/recharts') ||
+              id.includes('node_modules/d3-')) {
+            return 'vendor-charts';
+          }
+          // Export libs (xlsx, jspdf, docx, fflate)
+          if (id.includes('node_modules/xlsx') ||
+              id.includes('node_modules/jspdf') ||
+              id.includes('node_modules/docx') ||
+              id.includes('node_modules/fflate')) {
+            return 'vendor-export';
+          }
+          // Icon library
+          if (id.includes('node_modules/lucide-react')) {
+            return 'vendor-icons';
+          }
+          // Form + validation
+          if (id.includes('node_modules/zod') ||
+              id.includes('node_modules/react-hook-form') ||
+              id.includes('node_modules/@hookform/')) {
+            return 'vendor-forms';
+          }
+        },
+      },
+    },
+  },
 })
